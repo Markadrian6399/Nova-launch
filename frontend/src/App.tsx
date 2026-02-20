@@ -1,7 +1,13 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { Header } from "./components/Layout";
-import { ErrorBoundary, Spinner } from "./components/UI";
-import { ConnectButton } from "./components/WalletConnect";
+import { Header, Container } from "./components/Layout";
+import { Button, Card, ErrorBoundary } from "./components/UI";
+import {
+  PWAInstallButton,
+  PWAUpdateNotification,
+  PWAConnectionStatus,
+} from "./components/PWA";
+import { TokenDeployForm } from "./components/TokenDeployForm";
+import { useWallet } from "./hooks/useWallet";
+import { truncateAddress } from "./utils/formatting";
 
 const HomeRoute = lazy(() => import("./routes/HomeRoute"));
 const NotFoundRoute = lazy(() => import("./routes/NotFoundRoute"));
@@ -19,14 +25,7 @@ function usePathname() {
 }
 
 function App() {
-  const pathname = usePathname();
-  const RouteComponent = useMemo(() => {
-    if (pathname === "/") {
-      return HomeRoute;
-    }
-
-    return NotFoundRoute;
-  }, [pathname]);
+  const { wallet, connect, disconnect, isConnecting, error } = useWallet();
 
   return (
     <ErrorBoundary>
@@ -35,19 +34,42 @@ function App() {
       </a>
       <div className="min-h-screen bg-gray-50">
         <Header>
-          <ConnectButton />
+          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-4">
+            <PWAConnectionStatus />
+            <PWAInstallButton />
+            {wallet.connected && wallet.address ? (
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" disabled>
+                  {truncateAddress(wallet.address)}
+                </Button>
+                <Button variant="outline" size="sm" onClick={disconnect}>
+                  Disconnect
+                </Button>
+              </div>
+            ) : (
+              <Button size="sm" onClick={() => void connect()} loading={isConnecting}>
+                Connect Wallet
+              </Button>
+            )}
+          </div>
         </Header>
         <main id="main-content">
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center py-16">
-                <Spinner size="lg" className="text-gray-500" />
-              </div>
-            }
-          >
-            <RouteComponent />
-          </Suspense>
+          <Container>
+            <Card title="Deploy Your Token">
+              {error ? (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {error}
+                </div>
+              ) : null}
+              <TokenDeployForm
+                wallet={wallet}
+                onConnectWallet={connect}
+                isConnectingWallet={isConnecting}
+              />
+            </Card>
+          </Container>
         </main>
+        <PWAUpdateNotification />
       </div>
     </ErrorBoundary>
   );
