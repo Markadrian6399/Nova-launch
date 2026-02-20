@@ -14,7 +14,7 @@
     "test:coverage": "vitest --coverage --run"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^14.5.0",
+    "@stellar/freighter-api": "^6.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

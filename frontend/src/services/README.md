@@ -1,144 +1,108 @@
-# Stellar Service Implementation
+# StellarService
 
-## Overview
+The `StellarService` class provides the core functionality for deploying tokens on the Stellar blockchain using Soroban smart contracts.
 
-This service provides methods to interact with the Stellar blockchain, including querying token information and monitoring transaction status.
+## Usage
 
-## Features
-
-### 1. `getTokenInfo(tokenAddress: string): Promise<TokenInfo>`
-
-Retrieves comprehensive information about a deployed token.
-
-**Parameters:**
-- `tokenAddress`: Stellar contract address (C-address)
-
-**Returns:**
-- `TokenInfo` object containing:
-  - `address`: Token contract address
-  - `name`: Token name
-  - `symbol`: Token symbol
-  - `decimals`: Number of decimals
-  - `totalSupply`: Total token supply
-  - `creator`: Address that deployed the token
-  - `metadataUri`: Optional IPFS metadata URI
-  - `deployedAt`: Deployment timestamp
-  - `transactionHash`: Deployment transaction hash
-
-**Error Handling:**
-- Throws `Error('Invalid token address')` for malformed addresses
-- Gracefully handles missing metadata (returns `undefined`)
-- Falls back to default values if contract calls fail
-
-**Example:**
 ```typescript
-const service = new StellarService('testnet');
-const tokenInfo = await service.getTokenInfo('CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC');
-console.log(tokenInfo.name, tokenInfo.symbol);
+import { StellarService } from './services';
+import type { TokenDeployParams } from './types';
+
+// Initialize service
+const stellarService = new StellarService('testnet'); // or 'mainnet'
+
+// Deploy a token
+const params: TokenDeployParams = {
+    name: 'My Token',
+    symbol: 'MTK',
+    decimals: 7,
+    initialSupply: '1000000',
+    adminWallet: 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+    metadata: {
+        image: imageFile,
+        description: 'My token description'
+    }
+};
+
+const result = await stellarService.deployToken(params);
+console.log('Token deployed at:', result.tokenAddress);
+console.log('Transaction hash:', result.transactionHash);
 ```
 
-### 2. `monitorTransaction(hash: string, onProgress?: (status: TransactionDetails) => void): Promise<TransactionDetails>`
+## Methods
 
-Monitors a transaction until it's confirmed or times out.
+### `constructor(network?: 'testnet' | 'mainnet')`
 
-**Parameters:**
-- `hash`: Transaction hash to monitor
-- `onProgress`: Optional callback for status updates
+Creates a new StellarService instance.
 
-**Returns:**
-- `TransactionDetails` object containing:
-  - `hash`: Transaction hash
-  - `status`: 'pending' | 'success' | 'failed'
-  - `timestamp`: Transaction timestamp
-  - `fee`: Transaction fee
+- **Parameters:**
+  - `network` (optional): Network to connect to. Defaults to `'testnet'`.
 
-**Behavior:**
-- Polls Horizon API every 2 seconds initially
-- Implements exponential backoff (up to 10 seconds)
-- Timeouts after 60 seconds
-- Calls `onProgress` callback on each status change
+### `deployToken(params: TokenDeployParams): Promise<DeploymentResult>`
 
-**Error Handling:**
-- Throws `Error('Transaction monitoring timeout')` after 60 seconds
-- Retries on network errors with exponential backoff
+Deploys a new token to the Stellar network.
 
-**Example:**
-```typescript
-const service = new StellarService('testnet');
+- **Parameters:**
+  - `params`: Token deployment parameters
+    - `name`: Token name
+    - `symbol`: Token symbol
+    - `decimals`: Number of decimal places
+    - `initialSupply`: Initial token supply
+    - `adminWallet`: Admin wallet address
+    - `metadata` (optional): Token metadata (image and description)
 
-const result = await service.monitorTransaction(
-  'abc123...',
-  (status) => {
-    console.log(`Status: ${status.status}`);
-  }
-);
+- **Returns:** Promise resolving to deployment result
+  - `tokenAddress`: Deployed token contract address
+  - `transactionHash`: Transaction hash
+  - `totalFee`: Total fee paid (in stroops)
+  - `timestamp`: Deployment timestamp
 
-console.log(`Final status: ${result.status}`);
-```
+- **Throws:**
+  - `Error` if Freighter wallet is not found
+  - `Error` if transaction simulation fails
+  - `Error` if transaction submission fails
+  - `Error` if transaction confirmation times out
 
-## Implementation Details
+## Transaction Flow
 
-### Polling Strategy
+1. **Get Source Account**: Fetches the account details from the network
+2. **Build Contract Invocation**: Creates a contract call to `create_token`
+3. **Calculate Fees**: Determines total fee (base + metadata if applicable)
+4. **Build Transaction**: Constructs the Stellar transaction
+5. **Simulate**: Simulates the transaction to ensure validity
+6. **Prepare**: Assembles the transaction with simulation results
+7. **Sign**: Requests signature from Freighter wallet
+8. **Submit**: Submits the signed transaction to the network
+9. **Confirm**: Polls for transaction confirmation (max 60 seconds)
+10. **Parse Result**: Extracts the token address from the result
 
-- **Initial interval**: 2000ms
-- **Max interval**: 10000ms
-- **Backoff multiplier**: 1.5x
-- **Timeout**: 60000ms
+## Fee Structure
 
-### Network Configuration
+- **Base Fee**: 70,000,000 stroops (7 XLM)
+- **Metadata Fee**: 30,000,000 stroops (3 XLM) - only if metadata is provided
+- **Total**: 70 XLM or 100 XLM depending on metadata inclusion
 
-**Testnet:**
-- RPC: `https://soroban-testnet.stellar.org`
-- Horizon: `https://horizon-testnet.stellar.org`
+## Error Handling
 
-**Mainnet:**
-- RPC: `https://soroban-mainnet.stellar.org`
-- Horizon: `https://horizon.stellar.org`
+The service provides comprehensive error handling:
 
-## Testing
+- Wallet connection errors
+- Transaction simulation errors
+- Network submission errors
+- Confirmation timeout errors
+- Result parsing errors
 
-Run tests with:
-```bash
-npm test -- stellar.test.ts
-```
-
-Tests cover:
-- Invalid address validation
-- Token info retrieval with/without metadata
-- Transaction monitoring success/failure
-- Polling behavior
-- Timeout handling
+All errors are thrown with descriptive messages for easy debugging.
 
 ## Dependencies
 
-- `@stellar/stellar-sdk`: Stellar blockchain SDK
-- Native `fetch`: HTTP requests to Horizon API
+- `@stellar/stellar-sdk`: Stellar SDK for blockchain interaction
+- `@stellar/freighter-api`: Freighter wallet integration
 
-## Usage in Application
+## Testing
 
-```typescript
-import { StellarService } from './services/stellar';
+The service includes comprehensive unit tests with mocked dependencies. Run tests with:
 
-// Initialize service
-const stellar = new StellarService('testnet');
-
-// Query token info
-const tokenInfo = await stellar.getTokenInfo(tokenAddress);
-
-// Monitor transaction
-const txResult = await stellar.monitorTransaction(
-  txHash,
-  (progress) => {
-    // Update UI with progress
-    setStatus(progress.status);
-  }
-);
+```bash
+npm test
 ```
-
-## Future Enhancements
-
-- [ ] Batch token info queries
-- [ ] WebSocket support for real-time updates
-- [ ] Caching layer for token info
-- [ ] Retry configuration options
-- [ ] Custom timeout values
